@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useState, useEffect } from "react";
 import vietnamMapData from "@svg-country-maps/vietnam";
 import "./VietnamMap.css";
 
@@ -15,6 +15,9 @@ interface VietnamMapProps {
   onProvinceHover: (province: Province) => void;
   onProvinceLeave: () => void;
 }
+
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 8;
 
 const VietnamMap: React.FC<VietnamMapProps> = ({
   onProvinceHover,
@@ -225,7 +228,144 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
     },
   ];
 
-  const handleMouseEnter = (event: React.MouseEvent<SVGPathElement>) => {
+  // Zoom and pan state
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const lastPos = useRef<{ x: number; y: number } | null>(null);
+
+  // Touch state for pinch zoom
+  const lastTouch = useRef<{
+    touches: [number, number, number, number] | null;
+    scale: number;
+    translate: { x: number; y: number };
+  }>({ touches: null, scale: 1, translate: { x: 0, y: 0 } });
+
+  // Ref for the map container
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Mouse wheel for zoom (manual event listener)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      let newScale = scale - e.deltaY * 0.001;
+      newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+      setScale(newScale);
+    };
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", handleWheel);
+    };
+  }, [scale]);
+
+  // Touchmove for pan/pinch (manual event listener)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleTouchMove = (e: TouchEvent) => {
+      // Adapted from handleTouchMove React handler
+      if (e.touches.length === 1 && lastPos.current) {
+        const dx = e.touches[0].clientX - lastPos.current.x;
+        const dy = e.touches[0].clientY - lastPos.current.y;
+        setTranslate((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+        lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2 && lastTouch.current.touches) {
+        const [x1, y1, x2, y2] = lastTouch.current.touches;
+        const [t1, t2] = Array.from(e.touches);
+        const prevDist = Math.hypot(x2 - x1, y2 - y1);
+        const newDist = Math.hypot(
+          t2.clientX - t1.clientX,
+          t2.clientY - t1.clientY
+        );
+        let newScale = (lastTouch.current.scale * newDist) / prevDist;
+        newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+        setScale(newScale);
+        const prevMid = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+        const newMid = {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2,
+        };
+        setTranslate({
+          x: lastTouch.current.translate.x + (newMid.x - prevMid.x),
+          y: lastTouch.current.translate.y + (newMid.y - prevMid.y),
+        });
+      }
+      e.preventDefault();
+    };
+    container.addEventListener("touchmove", handleTouchMove, {
+      passive: false,
+    });
+    return () => {
+      container.removeEventListener("touchmove", handleTouchMove);
+    };
+  }, []);
+
+  // Touchstart for pan/pinch (manual event listener)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2) {
+        const [t1, t2] = Array.from(e.touches);
+        lastTouch.current = {
+          touches: [t1.clientX, t1.clientY, t2.clientX, t2.clientY],
+          scale,
+          translate,
+        };
+      }
+      e.preventDefault();
+    };
+    container.addEventListener("touchstart", handleTouchStart, {
+      passive: false,
+    });
+    return () => {
+      container.removeEventListener("touchstart", handleTouchStart);
+    };
+  }, [scale, translate]);
+
+  // Mouse down to start pan
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setDragging(true);
+    lastPos.current = { x: e.clientX, y: e.clientY };
+  };
+
+  // Mouse move to pan
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!dragging || !lastPos.current) return;
+    const dx = e.clientX - lastPos.current.x;
+    const dy = e.clientY - lastPos.current.y;
+    setTranslate((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+    lastPos.current = { x: e.clientX, y: e.clientY };
+  };
+
+  // Mouse up to stop pan
+  const handleMouseUp = () => {
+    setDragging(false);
+    lastPos.current = null;
+  };
+
+  const handleMouseLeavePan = () => {
+    setDragging(false);
+    lastPos.current = null;
+  };
+
+  // Touch handlers for pan and pinch zoom
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (e.touches.length === 0) {
+      lastPos.current = null;
+      lastTouch.current.touches = null;
+    }
+    e.preventDefault();
+  };
+
+  // Province hover handlers
+  const handleProvinceMouseEnter = (
+    event: React.MouseEvent<SVGPathElement>
+  ) => {
     const target = event.target as SVGPathElement;
     if (target.id) {
       const province = provinces.find((p) => p.id === target.id);
@@ -235,34 +375,83 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
     }
   };
 
-  const handleMouseLeave = () => {
+  const handleProvinceMouseLeave = () => {
     onProvinceLeave();
   };
 
+  // Province click handler (for tap/click on mobile/desktop)
+  const handleProvinceClick = (event: React.MouseEvent<SVGPathElement>) => {
+    const target = event.target as SVGPathElement;
+    if (target.id) {
+      const province = provinces.find((p) => p.id === target.id);
+      if (province) {
+        onProvinceHover(province);
+      }
+    }
+  };
+
+  // Province touch handler (for tap on mobile)
+  const handleProvinceTouchEnd = (event: React.TouchEvent<SVGPathElement>) => {
+    // Only trigger if it's a tap (not a drag or pinch)
+    if (event.changedTouches.length === 1 && event.touches.length === 0) {
+      const target = event.target as SVGPathElement;
+      if (target.id) {
+        const province = provinces.find((p) => p.id === target.id);
+        if (province) {
+          onProvinceHover(province);
+        }
+      }
+    }
+  };
+
+  // Deselect province when clicking on map background
+  const handleMapBackgroundClick = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (event.target === event.currentTarget) {
+      onProvinceLeave();
+    }
+  };
+
   return (
-    <div className="vietnam-map-container">
+    <div
+      ref={containerRef}
+      className="vietnam-map-container"
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeavePan}
+      onTouchEnd={handleTouchEnd}
+      style={{ cursor: dragging ? "grabbing" : "grab", touchAction: "none" }}
+    >
       <div className="vietnam-map">
         <svg
           viewBox={vietnamMapData.viewBox}
           xmlns="http://www.w3.org/2000/svg"
+          style={{ userSelect: "none" }}
+          onClick={handleMapBackgroundClick}
         >
-          {/* Province paths */}
-          {vietnamMapData.locations.map((location) => (
-            <path
-              key={location.id}
-              id={location.id}
-              d={location.path}
-              className="province"
-              data-region={
-                provinces.find((p) => p.id === location.id)?.region || "Unknown"
-              }
-              fill="#4dabf7"
-              stroke="#1971c2"
-              strokeWidth="0.5"
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-            />
-          ))}
+          <g
+            transform={`translate(${translate.x},${translate.y}) scale(${scale})`}
+          >
+            {vietnamMapData.locations.map((location) => (
+              <path
+                key={location.id}
+                id={location.id}
+                d={location.path}
+                className="province"
+                data-region={
+                  provinces.find((p) => p.id === location.id)?.region ||
+                  "Unknown"
+                }
+                fill="#4dabf7"
+                stroke="#1971c2"
+                strokeWidth="0.5"
+                onMouseEnter={handleProvinceMouseEnter}
+                onMouseLeave={handleProvinceMouseLeave}
+                onClick={handleProvinceClick}
+                onTouchEnd={handleProvinceTouchEnd}
+              />
+            ))}
+          </g>
         </svg>
       </div>
     </div>
