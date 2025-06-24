@@ -362,12 +362,36 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
     e.preventDefault();
   };
 
-  // Province hover handlers
+  // Track hovered or tapped province
+  const [hoveredProvinceId, setHoveredProvinceId] = useState<string | null>(
+    null
+  );
+  // Track mouse position in SVG coordinates for transform-origin
+  // const [hoveredMousePos, setHoveredMousePos] = useState<{
+  //   x: number;
+  //   y: number;
+  // } | null>(null);
+
+  // Helper to get SVG coordinates from mouse event
+  const getSVGCoords = (evt: React.MouseEvent<SVGPathElement>) => {
+    const svg = evt.currentTarget.ownerSVGElement;
+    if (!svg) return { x: 0, y: 0 };
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX;
+    pt.y = evt.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    const transformed = pt.matrixTransform(ctm.inverse());
+    return { x: transformed.x, y: transformed.y };
+  };
+
+  // Update handlers to set hoveredProvinceId and mouse position
   const handleProvinceMouseEnter = (
     event: React.MouseEvent<SVGPathElement>
   ) => {
     const target = event.target as SVGPathElement;
     if (target.id) {
+      setHoveredProvinceId(target.id);
       const province = provinces.find((p) => p.id === target.id);
       if (province) {
         onProvinceHover(province);
@@ -376,13 +400,14 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
   };
 
   const handleProvinceMouseLeave = () => {
+    setHoveredProvinceId(null);
     onProvinceLeave();
   };
 
-  // Province click handler (for tap/click on mobile/desktop)
   const handleProvinceClick = (event: React.MouseEvent<SVGPathElement>) => {
     const target = event.target as SVGPathElement;
     if (target.id) {
+      setHoveredProvinceId(target.id);
       const province = provinces.find((p) => p.id === target.id);
       if (province) {
         onProvinceHover(province);
@@ -390,12 +415,12 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
     }
   };
 
-  // Province touch handler (for tap on mobile)
   const handleProvinceTouchEnd = (event: React.TouchEvent<SVGPathElement>) => {
-    // Only trigger if it's a tap (not a drag or pinch)
     if (event.changedTouches.length === 1 && event.touches.length === 0) {
       const target = event.target as SVGPathElement;
       if (target.id) {
+        // For touch, use the centroid of the path as fallback
+        setHoveredProvinceId(target.id);
         const province = provinces.find((p) => p.id === target.id);
         if (province) {
           onProvinceHover(province);
@@ -404,9 +429,10 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
     }
   };
 
-  // Deselect province when clicking on map background
+  // Deselect on background click
   const handleMapBackgroundClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (event.target === event.currentTarget) {
+      setHoveredProvinceId(null);
       onProvinceLeave();
     }
   };
@@ -477,7 +503,16 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
               />
             ))}
             {/* Render all main province paths on top */}
-            {vietnamMapData.locations.map((location) => (
+            {vietnamMapData.locations.map((location) => [
+              // Base shadow path (visual only)
+              <path
+                key={location.id + "-base"}
+                d={location.path}
+                fill="#111827"
+                opacity="0.1"
+                style={{ filter: "none" }}
+              />,
+              // Main path (interactive)
               <path
                 key={location.id}
                 id={location.id}
@@ -498,8 +533,29 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
                 ref={(el) => {
                   pathRefs.current[location.id] = el;
                 }}
-              />
-            ))}
+                style={
+                  hoveredProvinceId === location.id
+                    ? { opacity: 0.1 }
+                    : { transition: "transform 0.3s" }
+                }
+              />,
+              // Scaled-up path (only if hovered/tapped)
+              hoveredProvinceId === location.id && (
+                <path
+                  key={location.id + "-scaled"}
+                  d={location.path}
+                  fill={provinceColorMap[location.id]}
+                  stroke="#fff"
+                  strokeWidth="1.5"
+                  filter="url(#province-shadow)"
+                  style={{
+                    transform: "translateY(-5px)",
+                    transition: "transform 0.3s",
+                    pointerEvents: "none",
+                  }}
+                />
+              ),
+            ])}
           </g>
         </svg>
       </div>
