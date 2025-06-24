@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useMemo } from "react";
 import vietnamMapData from "@svg-country-maps/vietnam";
 import "./VietnamMap.css";
 
@@ -411,6 +411,21 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
     }
   };
 
+  // Generate a random pastel color for each province, memoized for consistency
+  const provinceColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    vietnamMapData.locations.forEach((location) => {
+      const hue = Math.floor(Math.random() * 360);
+      const sat = 60 + Math.random() * 20;
+      const light = 60 + Math.random() * 15;
+      map[location.id] = `hsl(${hue}, ${sat}%, ${light}%)`;
+    });
+    return map;
+  }, []);
+
+  // Refs and state for bounding boxes
+  const pathRefs = useRef<Record<string, SVGPathElement | null>>({});
+
   return (
     <div
       ref={containerRef}
@@ -429,9 +444,39 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
           style={{ userSelect: "none" }}
           onClick={handleMapBackgroundClick}
         >
+          <defs>
+            {/* Drop shadow filter for 3D effect */}
+            <filter
+              id="province-shadow"
+              x="-20%"
+              y="-20%"
+              width="140%"
+              height="140%"
+            >
+              <feDropShadow
+                dx="0"
+                dy="4"
+                stdDeviation="4"
+                floodColor="#1971c2"
+                floodOpacity="0.25"
+              />
+            </filter>
+          </defs>
           <g
             transform={`translate(${translate.x},${translate.y}) scale(${scale})`}
           >
+            {/* Render all extrusions first */}
+            {vietnamMapData.locations.map((location) => (
+              <path
+                key={location.id + "-extrude"}
+                d={location.path}
+                transform="translate(0, 4)"
+                fill="#274472"
+                opacity="0.85"
+                style={{ filter: "none", pointerEvents: "none" }}
+              />
+            ))}
+            {/* Render all main province paths on top */}
             {vietnamMapData.locations.map((location) => (
               <path
                 key={location.id}
@@ -442,13 +487,17 @@ const VietnamMap: React.FC<VietnamMapProps> = ({
                   provinces.find((p) => p.id === location.id)?.region ||
                   "Unknown"
                 }
-                fill="#4dabf7"
-                stroke="#1971c2"
-                strokeWidth="0.5"
+                fill={provinceColorMap[location.id]}
+                stroke="#fff"
+                strokeWidth="1.5"
+                filter="url(#province-shadow)"
                 onMouseEnter={handleProvinceMouseEnter}
                 onMouseLeave={handleProvinceMouseLeave}
                 onClick={handleProvinceClick}
                 onTouchEnd={handleProvinceTouchEnd}
+                ref={(el) => {
+                  pathRefs.current[location.id] = el;
+                }}
               />
             ))}
           </g>

@@ -28,15 +28,11 @@
   cursor: pointer;
   transition: all 0.3s ease;
   transform-origin: center;
-  fill: #4dabf7;
-  stroke: #1971c2;
-  stroke-width: 0.5;
 }
 
 .vietnam-map path:hover {
   fill: #339af0 !important;
-  stroke: #1c7ed6 !important;
-  stroke-width: 1.5 !important;
+  stroke: #fff !important;
   /* transform: scale(1.5); */
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
   z-index: 10;
